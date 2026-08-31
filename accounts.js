@@ -8,8 +8,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// 在读取 ADMIN_KEY 之前先加载 .env，避免 ESM import 提升导致 server.js 的
+// dotenv.config() 在 accounts.js 顶层才执行、env 尚未就绪而读到空值。
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 const FILE = path.join(__dirname, 'accounts.json');
 
 const DEFAULT_TOTAL = 20;            // 默认每账号 20 张
