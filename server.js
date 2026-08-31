@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { STYLES, getStyle } from './styles.js';
+import { createAccount, getAccount, checkQuota, consumeQuota, listAccounts, resetAccount, deleteAccount, checkAdmin, ADMIN_KEY } from './accounts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -111,10 +112,49 @@ app.get('/api/styles', (_req, res) => {
   res.json({ styles: list });
 });
 
+// 用户查询自己的额度
+app.post('/api/account/me', (req, res) => {
+  const { code } = req.body || {};
+  const acc = code ? getAccount(code) : null;
+  if (!acc) return res.status(404).json({ ok: false, error: '访问码无效' });
+  res.json({ ok: true, account: acc });
+});
+
+// 管理后台 —— 以下接口需带 adminKey（= .env 的 ADMIN_KEY）
+app.post('/api/admin/list', (req, res) => {
+  if (!checkAdmin(req.body?.adminKey)) return res.status(401).json({ ok: false, error: '无权限' });
+  res.json({ ok: true, accounts: listAccounts() });
+});
+
+app.post('/api/admin/create', (req, res) => {
+  if (!checkAdmin(req.body?.adminKey)) return res.status(401).json({ ok: false, error: '无权限' });
+  const { name, total, code } = req.body || {};
+  const acc = createAccount(name, total, code);
+  res.json({ ok: true, account: acc });
+});
+
+app.post('/api/admin/reset', (req, res) => {
+  if (!checkAdmin(req.body?.adminKey)) return res.status(401).json({ ok: false, error: '无权限' });
+  const ok = resetAccount(req.body?.code);
+  if (!ok) return res.status(404).json({ ok: false, error: '账号不存在' });
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/delete', (req, res) => {
+  if (!checkAdmin(req.body?.adminKey)) return res.status(401).json({ ok: false, error: '无权限' });
+  const ok = deleteAccount(req.body?.code);
+  if (!ok) return res.status(404).json({ ok: false, error: '账号不存在' });
+  res.json({ ok: true });
+});
+
 // 重绘
 app.post('/api/redraw', async (req, res) => {
   try {
-    const { image, style, size } = req.body || {};
+    const { image, style, size, code } = req.body || {};
+    // 额度校验
+    const quota = checkQuota(code);
+    if (!quota.ok) return res.status(403).json({ ok: false, error: quota.error });
+
     const err = validateImage(image);
     if (err) return res.status(400).json({ ok: false, error: err });
     const styleDef = getStyle(style);
@@ -131,7 +171,19 @@ app.post('/api/redraw', async (req, res) => {
     if (!url) throw new Error('生成成功但未返回图片 URL');
 
     const dl = await downloadResult(url, id);
-    res.json({ ok: true, result: dl.url, model: raw.model, size: outSize, style: styleDef.name });
+    // 生成成功后才扣额度
+    consumeQuota(code);
+    const acc = getAccount(code);
+    res.json({
+      ok: true,
+      result: dl.url,
+      model: raw.model,
+      size: outSize,
+      style: styleDef.name,
+      used: acc?.used ?? 0,
+      total: acc?.total ?? 0,
+      remaining: acc?.remaining ?? 0,
+    });
   } catch (e) {
     const status = /Ark API 4/.test(e.message) ? 502 : 500;
     res.status(status).json({ ok: false, error: e.message });

@@ -75,6 +75,15 @@
   </div>
 
   <div class="panel">
+    <div style="font-weight:600; margin-bottom:8px;">访问码</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+      请输入管理员分配的访问码以使用。通过 URL 带 <code>?code=xxx</code> 访问会自动填入。
+    </div>
+    <input id="code" type="text" placeholder="输入访问码" style="width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px;" />
+    <div id="quota-hint" style="font-size:12px; color:var(--muted); margin-top:8px;"></div>
+  </div>
+
+  <div class="panel">
     <div style="font-weight:600; margin-bottom:12px;">选择风格</div>
     <div class="styles" id="styles"><!-- JS 动态生成 --></div>
     <div style="font-weight:600; margin:20px 0 12px;">输出尺寸</div>
@@ -110,6 +119,39 @@ let origW = 0;        // 原海报宽度
 let origH = 0;        // 原海报高度
 
 const $ = (id) => document.getElementById(id);
+let currentCode = '';
+
+// 访问码：从 URL ?code=xxx 自动填入，并查询额度
+function initCode() {
+  const params = new URLSearchParams(location.search);
+  const c = params.get('code') || '';
+  if (c) $('code').value = c;
+  $('code').addEventListener('input', (e) => { currentCode = e.target.value.trim(); refreshQuota(); });
+  $('code').dispatchEvent(new Event('input'));
+  // 管理入口：链接带 ?admin=1 时显示管理按钮
+  if (params.get('admin') === '1') showAdminLink();
+}
+async function refreshQuota() {
+  const code = $('code').value.trim();
+  if (!code) { $('quota-hint').textContent = ''; return; }
+  try {
+    const r = await fetch('/api/account/me', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    const d = await r.json();
+    if (d.ok) {
+      $('quota-hint').textContent = `账号：${d.account.name}｜剩余额度：${d.account.remaining} / ${d.account.total}`;
+      $('quota-hint').style.color = 'var(--accent)';
+    } else {
+      $('quota-hint').textContent = d.error; $('quota-hint').style.color = '#c0392b';
+    }
+  } catch { /* ignore */ }
+}
+function showAdminLink() {
+  const link = document.createElement('a');
+  link.href = '/admin.html';
+  link.textContent = '管理后台';
+  link.style.cssText = 'display:block; text-align:right; font-size:12px; color:var(--accent); margin-top:8px;';
+  $('code').closest('.panel').appendChild(link);
+}
 
 // 加载风格
 async function loadStyles() {
@@ -194,14 +236,15 @@ $('go').onclick = async () => {
     const r = await fetch('/api/redraw', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageData, style: chosenStyle, size, origW, origH }),
+      body: JSON.stringify({ image: imageData, style: chosenStyle, size, origW, origH, code: $('code').value.trim() }),
     });
     const data = await r.json();
     if (!data.ok) throw new Error(data.error || '重绘失败');
     $('resultImg').src = data.result;
-    $('meta').textContent = `风格：${data.style} · 尺寸：${data.size} · 模型：${data.model}`;
+    $('meta').textContent = `风格：${data.style} · 尺寸：${data.size} · 模型：${data.model}` + (typeof data.remaining === 'number' ? ` · 剩余额度：${data.remaining}/${data.total}` : '');
     $('download').href = data.result;
     $('result').style.display = 'block';
+    refreshQuota();
   } catch (e) {
     showError(e.message);
   } finally {
@@ -214,6 +257,7 @@ $('go').onclick = async () => {
 $('reset').onclick = () => { imageData = null; chosenStyle = null; $('preview').style.display = 'none'; $('result').style.display = 'none'; $('file').value = ''; highlight(); updateGo(); };
 
 loadStyles();
+initCode();
 </script>
 </body>
 </html>

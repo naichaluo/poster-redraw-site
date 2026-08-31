@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 · 海报重绘</title>
+  <style>
+    :root { --bg:#f6f4f0; --card:#fff; --accent:#e26b4a; --ink:#2b2b2b; --muted:#8a8782; --line:#e8e4de; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); }
+    .wrap { max-width:900px; margin:0 auto; padding:28px 20px 60px; }
+    h1 { font-size:22px; margin:0 0 4px; }
+    .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+    .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:18px; }
+    .field { margin-bottom:12px; }
+    label { display:block; font-size:13px; margin-bottom:4px; color:var(--muted); }
+    input { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+    .row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+    .row .field { flex:1; min-width:120px; margin-bottom:0; }
+    .btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:14px; cursor:pointer; }
+    .btn.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+    table { width:100%; border-collapse:collapse; margin-top:14px; font-size:13px; }
+    th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-weight:600; }
+    .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; }
+    .tag.ok { background:#e8f5e9; color:#2e7d32; }
+    .tag.no { background:#fdecea; color:#c0392b; }
+    .err { color:#c0392b; background:#fdecea; border-radius:8px; padding:10px; font-size:13px; display:none; margin-top:10px; }
+    .ok { color:#2e7d32; background:#e8f5e9; border-radius:8px; padding:10px; font-size:13px; display:none; margin-top:10px; }
+    .mono { font-family:monospace; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>管理后台 · 海报重绘</h1>
+  <div class="sub">账号池 + 额度管理（无数据库，JSON 持久化）</div>
+
+  <!-- 登录 -->
+  <div class="panel" id="loginPanel">
+    <div style="font-weight:600; margin-bottom:8px;">管理员登录</div>
+    <div class="field"><input id="adminKey" type="password" placeholder="输入 ADMIN_KEY（.env 里的口令）" /></div>
+    <button class="btn" id="loginBtn">登录</button>
+  </div>
+
+  <!-- 管理内容 -->
+  <div id="main" style="display:none;">
+    <!-- 新增账号 -->
+    <div class="panel">
+      <div style="font-weight:600; margin-bottom:12px;">新增账号</div>
+      <div class="row">
+        <div class="field"><label>姓名/备注</label><input id="newName" placeholder="如：张三" /></div>
+        <div class="field"><label>额度（张）</label><input id="newTotal" type="number" placeholder="20" /></div>
+        <div class="field"><label>指定访问码（可选）</label><input id="newCode" placeholder="留空自动生成" /></div>
+        <button class="btn" id="createBtn">创建</button>
+      </div>
+      <div class="ok" id="createOk"></div>
+    </div>
+
+    <!-- 账号列表 -->
+    <div class="panel">
+      <div style="font-weight:600; margin-bottom:4px;">账号列表</div>
+      <table>
+        <thead><tr><th>访问码</th><th>姓名</th><th>额度</th><th>已用</th><th>剩余</th><th>操作</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="err" id="listErr"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let ADMIN = '';
+let lastCreateInfo = null;
+
+$('loginBtn').onclick = async () => {
+  ADMIN = $('adminKey').value.trim();
+  if (!ADMIN) { alert('请输入管理员口令'); return; }
+  const r = await fetch('/api/admin/list', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({adminKey:ADMIN}) });
+  const d = await r.json();
+  if (!d.ok) { alert(d.error || '口令错误'); return; }
+  $('loginPanel').style.display = 'none';
+  $('main').style.display = 'block';
+  renderTable(d.accounts);
+};
+
+// 创建
+$('createBtn').onclick = async () => {
+  const name = $('newName').value.trim();
+  const total = Number($('newTotal').value) || 20;
+  const code = $('newCode').value.trim() || undefined;
+  const r = await fetch('/api/admin/create', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({adminKey:ADMIN, name, total, code}) });
+  const d = await r.json();
+  if (d.ok) {
+    lastCreateInfo = d.account;
+    $('createOk').textContent = `已创建：访问码 ${d.account.code}（${d.account.name}，${d.account.total} 张）`;
+    $('createOk').style.display = 'block';
+    $('newCode').value = ''; $('newTotal').value = ''; $('newName').value = '';
+    await reload();
+  } else { alert(d.error); }
+};
+
+async function reload() {
+  const r = await fetch('/api/admin/list', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({adminKey:ADMIN}) });
+  const d = await r.json();
+  if (d.ok) renderTable(d.accounts); else $('listErr').textContent = d.error, $('listErr').style.display='block';
+}
+
+function renderTable(accounts) {
+  const tb = $('tbody'); tb.innerHTML = '';
+  accounts.forEach(a => {
+    const tr = document.createElement('tr');
+    const rem = a.total - a.used;
+    tr.innerHTML = `
+      <td class="mono">${a.code}</td>
+      <td>${a.name}</td>
+      <td>${a.total}</td>
+      <td>${a.used}</td>
+      <td class="mono">${a.used >= a.total ? '已用尽' : rem}</td>
+      <td>
+        <button class="btn secondary" data-act="reset" data-code="${a.code}" style="padding:4px 8px; font-size:12px;">重置</button>
+        <button class="btn secondary" data-act="del" data-code="${a.code}" style="padding:4px 8px; font-size:12px; color:#c0392b;">删除</button>
+      </td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('button').forEach(btn => {
+    btn.onclick = async () => {
+      const act = btn.dataset.act, code = btn.dataset.code;
+      const url = act === 'reset' ? '/api/admin/reset' : '/api/admin/delete';
+      if (act === 'del' && !confirm(`确认删除 ${code}？`)) return;
+      const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({adminKey:ADMIN, code}) });
+      const d = await r.json();
+      if (d.ok) await reload(); else alert(d.error);
+    };
+  });
+}
+</script>
+</body>
+</html>
