@@ -1,0 +1,17 @@
+{
+  "name": "poster-redraw-site",
+  "version": "1.0.0",
+  "description": "上传海报 -> 点选风格 -> AI 重绘 -> 下载。基于火山方舟 Seedream 5.0 Pro 图生图 + 9 种海报重绘风格。",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}

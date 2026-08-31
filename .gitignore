@@ -1,0 +1,6 @@
+﻿node_modules/
+results/
+logs/
+.env
+server.log
+*.log

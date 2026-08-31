@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>海报重绘 · AI 风格生成器</title>
+  <style>
+    :root {
+      --bg: #f6f4f0; --card: #ffffff; --accent: #e26b4a; --ink: #2b2b2b; --muted: #8a8782; --line: #e8e4de;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--ink); }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 28px 20px 80px; }
+    h1 { font-size: 26px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 26px; }
+    .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-bottom: 20px; }
+
+    /* 上传 */
+    .drop { border: 2px dashed var(--line); border-radius: 12px; min-height: 130px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); cursor: pointer; transition: border-color .2s, background .2s; gap: 8px; }
+    .drop:hover, .drop.drag { border-color: var(--accent); background: #fdfaf8; }
+    .drop input { display: none; }
+    .drop b { color: var(--accent); }
+    .preview { display: none; margin-top: 16px; text-align: center; }
+    .preview img { max-height: 260px; max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+    .preview .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    /* 风格 */
+    .styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .style-card { border: 1.5px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .1s; background: #fff; }
+    .style-card:hover { transform: translateY(-1px); }
+    .style-card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(226,107,74,.18); }
+    .style-card .n { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .style-card .tag { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    /* 尺寸 */
+    .sizes { display: flex; gap: 10px; flex-wrap: wrap; }
+    .size-pill { border: 1.5px solid var(--line); border-radius: 20px; padding: 7px 14px; cursor: pointer; font-size: 13px; background: #fff; }
+    .size-pill.sel { border-color: var(--accent); color: var(--accent); background: #fdfaf8; }
+
+    /* 按钮 */
+    .action { text-align: center; margin-top: 8px; }
+    .btn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 13px 30px; font-size: 16px; cursor: pointer; font-weight: 600; }
+    .btn:disabled { background: #d9d5cf; cursor: not-allowed; }
+    .btn.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+    /* 结果 */
+    .result { display: none; text-align: center; }
+    .result img { max-width: 100%; max-height: 460px; border-radius: 12px; border: 1px solid var(--line); }
+    .result .meta { font-size: 12px; color: var(--muted); margin: 12px 0; }
+
+    /* 状态 */
+    .status { display: none; text-align: center; padding: 20px; color: var(--muted); }
+    .status .spin { display: inline-block; width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: middle; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error { display: none; text-align: center; color: #c0392b; background: #fdecea; border-radius: 10px; padding: 12px; margin-top: 12px; font-size: 14px; }
+    .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 40px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>海报重绘 · AI 风格生成器</h1>
+  <div class="sub">上传你的海报 → 点选一种风格 → AI 重绘 → 下载。基于 Seedream 5.0 Pro，全部文字与品牌信息尽力保留。</div>
+
+  <div class="panel">
+    <div class="drop" id="drop">
+      <input type="file" id="file" accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff,image/gif" />
+      <div><b>点击选择</b> 或 拖拽图片到这里</div>
+      <div style="font-size:12px">支持 jpg / png / webp / bmp / tiff / gif，≤30MB</div>
+    </div>
+    <div class="preview" id="preview">
+      <img id="previewImg" alt="预览" />
+      <div class="hint">上传成功，请选择下方风格开始重绘</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div style="font-weight:600; margin-bottom:12px;">选择风格</div>
+    <div class="styles" id="styles"><!-- JS 动态生成 --></div>
+    <div style="font-weight:600; margin:20px 0 12px;">输出尺寸</div>
+    <div class="sizes" id="sizes">
+      <div class="size-pill sel" data-size="auto">自动（按原海报）</div>
+      <div class="size-pill" data-size="1024x1536">竖版 1024×1536</div>
+      <div class="size-pill" data-size="1024x1280">竖版 1024×1280</div>
+      <div class="size-pill" data-size="1280x1024">横版 1280×1024</div>
+      <div class="size-pill" data-size="1024x1024">方形 1024×1024</div>
+    </div>
+    <div class="action">
+      <button class="btn" id="go" disabled>开始重绘</button>
+      <button class="btn secondary" id="reset" style="margin-left:10px;">重传</button>
+    </div>
+  </div>
+
+  <div class="status" id="status"><span class="spin"></span>正在重绘，通常需要几秒到几十秒…</div>
+  <div class="error" id="error"></div>
+
+  <div class="panel result" id="result">
+    <img id="resultImg" alt="结果" />
+    <div class="meta" id="meta"></div>
+    <a class="btn" id="download" download="poster-redraw.jpg" href="#">下载图片</a>
+  </div>
+
+  <div class="footer">仅供个人设计参考 · 图片按张计费 · 请勿用于盗用品牌资产</div>
+</div>
+
+<script>
+let chosenStyle = null;
+let imageData = null; // base64 data URI
+let origW = 0;        // 原海报宽度
+let origH = 0;        // 原海报高度
+
+const $ = (id) => document.getElementById(id);
+
+// 加载风格
+async function loadStyles() {
+  const r = await fetch('/api/styles');
+  const { styles } = await r.json();
+  const box = $('styles');
+  styles.forEach((s) => {
+    const el = document.createElement('div');
+    el.className = 'style-card';
+    el.dataset.id = s.id;
+    el.innerHTML = `<div class="n">${s.name}</div><div class="tag">${s.tagline}</div>`;
+    el.onclick = () => { chosenStyle = s.id; highlight(); };
+    box.appendChild(el);
+  });
+}
+function highlight() {
+  document.querySelectorAll('.style-card').forEach((c) => c.classList.toggle('sel', c.dataset.id === chosenStyle));
+  updateGo();
+}
+
+// 上传处理
+const drop = $('drop'); const file = $('file');
+drop.onclick = () => file.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('drag'); };
+drop.ondragleave = () => drop.classList.remove('drag');
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('drag'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); };
+file.onchange = () => { if (file.files[0]) handleFile(file.files[0]); };
+
+function handleFile(f) {
+  if (!f.type.startsWith('image/')) { showError('请选择图片文件'); return; }
+  if (f.size > 30 * 1024 * 1024) { showError('图片超过 30MB'); return; }
+  // 先压缩：缩到合适尺寸并转 JPEG，避免 base64 过大触发后端 body 超限
+  const img = new Image();
+  const url = URL.createObjectURL(f);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    // 记录原海报尺寸（用它做"自动"输出尺寸的依据）
+    origW = img.naturalWidth; origH = img.naturalHeight;
+    // 限制最长边 1600px，超过才等比缩小（仅用于减小 base64 上传体积）
+    const maxDim = 1600;
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (Math.max(w, h) > maxDim) {
+      const s = maxDim / Math.max(w, h);
+      w = Math.round(w * s); h = Math.round(h * s);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    // 输出压缩 JPEG（质量 0.85），减小体积
+    imageData = canvas.toDataURL('image/jpeg', 0.85);
+    // 新上传后，输出尺寸重置为"自动（按原海报）"
+    document.querySelectorAll('.size-pill').forEach((x) => x.classList.toggle('sel', x.dataset.size === 'auto'));
+    $('previewImg').src = imageData;
+    $('preview').style.display = 'block';
+    $('result').style.display = 'none';
+    $('error').style.display = 'none';
+    updateGo();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); showError('无法读取该图片'); };
+  img.src = url;
+}
+
+// 尺寸选择
+document.querySelectorAll('.size-pill').forEach((p) => {
+  p.onclick = () => { document.querySelectorAll('.size-pill').forEach((x) => x.classList.toggle('sel', x === p)); };
+});
+
+function updateGo() { $('go').disabled = !(imageData && chosenStyle); }
+
+function showError(msg) { $('error').textContent = msg; $('error').style.display = 'block'; }
+
+// 重绘
+$('go').onclick = async () => {
+  if (!imageData || !chosenStyle) return;
+  const size = document.querySelector('.size-pill.sel').dataset.size;
+  $('status').style.display = 'block';
+  $('error').style.display = 'none';
+  $('result').style.display = 'none';
+  $('go').disabled = true;
+  try {
+    const r = await fetch('/api/redraw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: imageData, style: chosenStyle, size, origW, origH }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || '重绘失败');
+    $('resultImg').src = data.result;
+    $('meta').textContent = `风格：${data.style} · 尺寸：${data.size} · 模型：${data.model}`;
+    $('download').href = data.result;
+    $('result').style.display = 'block';
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    $('status').style.display = 'none';
+    $('go').disabled = false;
+  }
+};
+
+// 重传
+$('reset').onclick = () => { imageData = null; chosenStyle = null; $('preview').style.display = 'none'; $('result').style.display = 'none'; $('file').value = ''; highlight(); updateGo(); };
+
+loadStyles();
+</script>
+</body>
+</html>
