@@ -106,9 +106,13 @@ async function downloadResult(url, id) {
   return { url: `/results/${name}`, path: dest };
 }
 
-// 风格列表（前端卡片）
+// 风格列表（前端卡片）——附带缩略图地址（public/thumbs/<id>.jpg，不存在则为 null）
+const THUMB_DIR = path.join(__dirname, 'public', 'thumbs');
 app.get('/api/styles', (_req, res) => {
-  const list = Object.entries(STYLES).map(([id, s]) => ({ id, name: s.name, tagline: s.tagline }));
+  const list = Object.entries(STYLES).map(([id, s]) => {
+    const thumb = fs.existsSync(path.join(THUMB_DIR, `${id}.jpg`)) ? `/thumbs/${id}.jpg` : null;
+    return { id, name: s.name, tagline: s.tagline, thumb };
+  });
   res.json({ styles: list });
 });
 

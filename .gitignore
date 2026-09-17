@@ -5,3 +5,5 @@ logs/
 server.log
 *.log
 accounts.json
+thumbs_src/
+make_thumbs.py
